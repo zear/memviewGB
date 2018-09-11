@@ -1,0 +1,55 @@
+INCLUDE "hardware.inc"
+
+SECTION "input_data", WRAM0
+
+; Input.
+INPUT_BSS_START::
+joy_old::		DS 1
+joy_cur::		DS 1
+joy_pressed::		DS 1
+joy_released::		DS 1
+INPUT_BSS_END::
+
+SECTION "input", ROM0
+
+joy_update::
+    ld   a, [joy_cur]
+    ld   [joy_old], a
+    ld   c, a
+
+    ld   a, JP1F_BUTTONS
+    ld   [rJP1], a
+    ; Wait for button rebounce.
+REPT 6
+    ldh  a, [rJP1]
+ENDR
+    cpl
+    and  a, $0f
+    ld   b, a
+
+    ld   a, JP1F_DPAD
+    ld   [rJP1], a
+    ; Wait for button rebounce.
+REPT 4
+    ldh  a, [rJP1]
+ENDR
+    cpl
+    and  a, $0f
+    swap a
+    or   a, b
+
+    ld   [joy_cur], a
+    ld   b, a
+
+    ; Newly released buttons.
+    cpl
+    and  a, c
+    ld   [joy_released], a
+
+    ; Newly pressed buttons.
+    ld   a, c
+    cpl
+    and  a, b
+    ld   [joy_pressed], a
+
+    ret

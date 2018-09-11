@@ -1,0 +1,71 @@
+SECTION "memory", ROM0
+
+; memset - fills BC bytes with the value of A, starting at address HL. 
+;
+; Input:
+;   a  - value
+;   hl - start address
+;   bc - byte count
+;
+memset::
+    inc b
+    inc c
+    jr  .skip
+.loop
+    ld  [hl+], a
+.skip
+    dec c
+    jr  nz, .loop
+    dec b
+    jr  nz, .loop
+
+    ret
+
+; memcpy - copies BC bytes from an address HL to an address DE.
+;
+; Input:
+;  hl - source address
+;  de - destination address
+;  bc - byte count
+;
+; Modifies:
+;  a
+;
+memcpy::
+    inc b
+    inc c
+    jr  .skip
+.loop
+    ld  a, [hl+]
+    ld  [de], a
+    inc de
+.skip
+    dec c
+    jr  nz, .loop
+    dec b
+    jr  nz, .loop
+
+    ret
+
+; memcpy8 - copies B bytes from an address HL to an address DE.
+;
+; Input:
+;  hl - source address
+;  de - destination address
+;  b  - byte count
+;
+; Modifies:
+;  a
+;
+memcpy8::
+    inc b
+    jr  .skip
+.loop
+    ld  a, [hl+]
+    ld  [de], a
+    inc de
+.skip
+    dec b
+    jr  nz, .loop
+
+    ret

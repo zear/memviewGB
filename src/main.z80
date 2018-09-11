@@ -1,0 +1,559 @@
+INCLUDE "cartridge.inc"
+INCLUDE "hardware.inc"
+INCLUDE "memory.inc"
+INCLUDE "video.inc"
+
+PAGE_SIZE		EQU $1000
+FBUF_START		EQU $87f0
+SECTION_TXT_LEN		EQU 5
+DEF_DELAY		EQU $28 ; 160 ms.
+
+SECTION "assets", ROM0
+
+INCLUDE "font.inc"
+
+SECTION "text", ROM0,ALIGN[8]
+section_txt:
+DB  "ROM0    "
+DB  "ROM0    "
+DB  "ROM0    "
+DB  "ROM0    "
+DB  "ROMX    "
+DB  "ROMX    "
+DB  "ROMX    "
+DB  "ROMX    "
+DB  "VRAM    "
+DB  "VRAM    "
+DB  "SRAM    "
+DB  "SRAM    "
+DB  "WRAM0   "
+DB  "WRAMX   "
+DB  "ECHO    "
+DB  "MISC    "
+section_txt_end:
+copying_txt:
+DB  "CC0 2018 Artur Rojek"
+copying_txt_end:
+
+SECTION "main_data", WRAM0
+
+BSS_START:
+; IRQ flags.
+vblank_f		DS 1
+; Other.
+addr_offset		DS 2
+delay_cnt		DS 1
+BSS_END:
+PUSHS
+
+SECTION "vectors", ROM0[$0000]
+
+; $0000 - $003f: RST handlers.
+ret
+DS 7
+; $0008
+ret
+DS 7
+; $0010
+ret
+DS 7
+; $0018
+ret
+DS 7
+; $0020
+ret
+DS 7
+; $0028
+ret
+DS 7
+; $0030
+ret
+DS 7
+; $0038
+ret
+DS 7
+
+; $0040 - $0068: Interrupt handlers.
+jp vbl_irq
+DS 5
+; $0048
+jp lcdc_irq
+DS 5
+; $0050
+jp timer_irq
+DS 5
+; $0058
+jp serial_irq
+DS 5
+; $0060
+jp joypad_irq
+DS 5
+
+SECTION "start", ROM0[$0100]
+
+nop
+jp init
+
+SECTION "logo", ROM0[$0104]
+
+; $0104 - $0133: Nintendo logo.
+INCLUDE "logo.inc"
+
+SECTION "header", ROM0[$0134]
+
+; $0134 - $013e (11 characters).
+DB "MEMVIEWGB"
+DS 2
+; $013f - $0142: Manufacturer code.
+DS 4
+
+; $0143: GBC compatibility flag.
+DB GBC_MODE_UNSUPPORTED
+
+; $0144 - 0145: New licensee code.
+DS 2
+
+; $0146: SGB compatibility flag.
+DB SGB_MODE_UNSUPPORTED
+
+; $0147: Cartridge mapper type.
+DB MAPPER_NONE
+
+; $0148: Cartridge ROM size.
+DB ROM_32K
+
+; $0149: Cartridge RAM size.
+DB RAM_NONE
+
+; $014a: Region destination code.
+DB REG_INTER
+
+; $014b: Old licensee code.
+DB LIC_CODE_NEW
+
+; $014c: Program version.
+DB $00
+
+; $014d: Header checksum. Usually patched by the assembler.
+DS 1
+; $014e - $014f: Global checksum. Usually patched by the assembler.
+DS 2
+
+SECTION "program", ROM0[$0150]
+
+init:
+    ld   sp, $d000 ; Set SP to highest usable memory location + 1.
+
+    di
+;    ld   a, IEF_VBLANK
+;    ld   [rIE], a
+
+    call lcd_off
+    call oam_init
+
+    ; Clear BSS.
+    xor  a
+    ld   hl, BSS_START
+    ld   bc, BSS_END-BSS_START
+    call memset
+    ld   hl, INPUT_BSS_START
+    ld   bc, INPUT_BSS_END-INPUT_BSS_START
+    call memset
+
+    ; Clear OAMBUF.
+    xor  a
+    ld   hl, OAMBUF
+    ld   bc, OAMBUF_LEN
+    call memset
+
+    ; Clear VRAM.
+    ld   hl, $8000
+    ld   bc, $2000
+    call memset
+
+    ; Clear OAM RAM.
+    ld   hl, $fe00
+    ld   bc, $fe9f - $fe00
+    call memset
+
+    ; Upload tileset.
+    ld   hl, font_tile_data
+    ld   de, $8000
+    ld   bc, font_tile_data_size
+    call memcpy
+
+    ; OAM X/Y position.
+    ; Fake tile.
+    ld   hl, OAMBUF
+    ld   a, $18
+    ld   [hl+], a
+    ld   a, $28
+    ld   [hl+], a
+    ld   a, $7f
+    ld   [hl+], a
+    inc  hl
+
+    ; Top row.
+    ld   a, $18
+    ld   [hl+], a
+    ld   a, $08
+    ld   [hl+], a
+    ld   a, $30
+    ld   [hl+], a
+    inc  hl
+
+    ld   a, $18
+    ld   [hl+], a
+    ld   a, $10
+    ld   [hl+], a
+    ld   a, $30
+    ld   [hl+], a
+    inc  hl
+
+    ld   a, $18
+    ld   [hl+], a
+    ld   a, $18
+    ld   [hl+], a
+    ld   a, $30
+    ld   [hl+], a
+    inc  hl
+
+    ld   a, $18
+    ld   [hl+], a
+    ld   a, $20
+    ld   [hl+], a
+    ld   a, $30
+    ld   [hl+], a
+    inc  hl
+
+    ; Bottom row.
+    ld   a, $90
+    ld   [hl+], a
+    ld   a, $08
+    ld   [hl+], a
+    ld   a, $30
+    ld   [hl+], a
+    inc  hl
+
+    ld   a, $90
+    ld   [hl+], a
+    ld   a, $10
+    ld   [hl+], a
+    ld   a, $30
+    ld   [hl+], a
+    inc  hl
+
+    ld   a, $90
+    ld   [hl+], a
+    ld   a, $18
+    ld   [hl+], a
+    ld   a, $30
+    ld   [hl+], a
+    inc  hl
+
+    ld   a, $90
+    ld   [hl+], a
+    ld   a, $20
+    ld   [hl+], a
+    ld   a, $30
+    ld   [hl+], a
+    inc  hl
+
+    ; Page title.
+    ld   a, $10
+    ld   [hl+], a
+    ld   a, $08
+    ld   [hl+], a
+    ld   a, $20
+    ld   [hl+], a
+    inc  hl
+
+    ld   a, $10
+    ld   [hl+], a
+    ld   a, $10
+    ld   [hl+], a
+    ld   a, $20
+    ld   [hl+], a
+    inc  hl
+
+    ld   a, $10
+    ld   [hl+], a
+    ld   a, $18
+    ld   [hl+], a
+    ld   a, $20
+    ld   [hl+], a
+    inc  hl
+
+    ld   a, $10
+    ld   [hl+], a
+    ld   a, $20
+    ld   [hl+], a
+    ld   a, $20
+    ld   [hl+], a
+    inc  hl
+
+    ld   a, $10
+    ld   [hl+], a
+    ld   a, $28
+    ld   [hl+], a
+    ld   a, $20
+    ld   [hl+], a
+    inc  hl
+
+    ; Upload palettes.
+    ld   a, %11100100
+    ld   [rBGP], a
+
+    ld   hl, rOBP0
+    ld   [hl], %11100100
+    ld   hl, rOBP1
+    ld   [hl], %11100100
+
+    ; Set background and window position.
+    xor  a
+    ld   [rSCX], a
+    ld   [rSCY], a
+
+    ld   [rWX], a
+    ld   [rWY], a
+
+    ; Set borders.
+    ld   a, $7f
+    ld   hl, SCRN0
+    ld   bc, $400
+    call memset
+
+    ; Set framebuffer.
+    ld   a, $7f
+LINE_NO SET $01
+REPT 16
+    ld   hl, SCRN0 + 32*LINE_NO + $04
+    ld   bc, $10
+
+    inc b
+    inc c
+    jr  .skip\@
+.loop\@
+    ld  [hl+], a
+    inc a
+.skip\@
+    dec c
+    jr  nz, .loop\@
+    dec b
+    jr  nz, .loop\@
+LINE_NO SET LINE_NO+1
+ENDR
+    
+    ; Enable LCD.
+    ld   a, LCDCF_ON | LCDCF_TSET8800 | LCDCF_BGD_ON | LCDCF_SPR8 | LCDCF_SPR_ON
+    ld   [rLCDC], a
+
+    call oam_update
+
+    ld   a, DEF_DELAY
+    ld   [delay_cnt], a
+
+; Fallthrough to main.
+main:
+.input
+    call joy_update
+.logic
+    ld   a, [joy_pressed]
+    and  JP1F_UP
+    call nz, page_prev
+ 
+    ld   a, [joy_pressed]
+    and  JP1F_DOWN
+    call nz, page_next
+
+    ld   a, [joy_pressed]
+    and  JP1F_LEFT
+    call nz, delay_dec
+
+    ld   a, [joy_pressed]
+    and  JP1F_RIGHT
+    call nz, delay_inc
+
+    ld   a, [addr_offset]
+    ld   l, a
+    ld   a, [addr_offset+1]
+    ld   h, a
+
+    ld   de, FBUF_START
+    ld   bc, PAGE_SIZE
+    call memcpy
+
+; Arbitrary delay.
+    ld   a, [delay_cnt]
+.loop
+    dec  a
+    jr   nz, .loop
+
+    jr main
+
+page_prev:
+    ld   a, [addr_offset+1]
+    sub  a, $10
+    ld   [addr_offset+1], a
+    call oam_update
+
+    ret
+
+page_next:
+    ld   a, [addr_offset+1]
+    add  a, $10
+    ld   [addr_offset+1], a
+    call oam_update
+
+    ret
+
+delay_dec:
+    ld   a, [delay_cnt]
+    dec  a
+    ld   [delay_cnt], a
+
+    ret
+
+delay_inc:
+    ld   a, [delay_cnt]
+    inc  a
+    ld   [delay_cnt], a
+
+    ret
+
+hex_to_tile:
+    cp   a, $0a
+    jr   nc, .letters
+.digits
+    add  a, $30
+
+    ret
+
+.letters
+    add  a, $57
+
+    ret
+
+oam_update:
+    ld   a, [addr_offset]
+    ld   e, a
+    ld   a, [addr_offset+1]
+    ld   d, a
+
+    ld   hl, OAMBUF+$06
+
+    ; Top row.
+    ld   a, d
+    and  a, $f0
+    swap a
+    call hex_to_tile
+    ld   [hl+], a
+REPT 3
+    inc  hl
+ENDR
+
+    ld   a, d
+    and  a, $0f
+    call hex_to_tile
+    ld   [hl+], a
+REPT 3
+    inc  hl
+ENDR
+
+    ld   a, e
+    and  a, $0f
+    call hex_to_tile
+    ld   [hl+], a
+REPT 3
+    inc  hl
+ENDR
+
+    ld   hl, $0fff
+    add  hl, de
+    ld   d, h
+    ld   e, l
+
+    ld   hl, OAMBUF+$16
+
+    ; Bottom row.
+    ld   a, d
+    and  a, $f0
+    swap a
+    call hex_to_tile
+    ld   [hl+], a
+REPT 3
+    inc  hl
+ENDR
+
+    ld   a, d
+    and  a, $0f
+    call hex_to_tile
+    ld   [hl+], a
+REPT 3
+    inc  hl
+ENDR
+
+    ld   a, e
+    and  a, $f0
+    swap a
+    call hex_to_tile
+    ld   [hl+], a
+REPT 3
+    inc  hl
+ENDR
+
+    ld   a, e
+    and  a, $0f
+    call hex_to_tile
+    ld   [hl+], a
+REPT 3
+    inc  hl
+ENDR
+
+    ld   de, OAMBUF+$26
+
+    ; Page title.
+    ld   a, [addr_offset+1]
+    rra
+
+    ld   hl, section_txt
+    ld   l, a
+REPT 5
+    ld   a, [hl+]
+    ld   [de], a
+REPT 4
+    inc  de
+ENDR
+ENDR
+
+    ; Wait for v-blank.
+    ld   a, LYF_VB
+    call wait_ly_fast
+
+    ; DMA copy OAM.
+    call oam_copy
+
+    ret
+
+SECTION "irqs", ROM0
+
+vbl_irq:
+    push af
+    or   a, 1
+    ld   [vblank_f], a
+    pop  af
+
+    reti
+
+lcdc_irq:
+    reti
+
+timer_irq:
+    reti
+
+serial_irq:
+    reti
+
+joypad_irq:
+    reti
+

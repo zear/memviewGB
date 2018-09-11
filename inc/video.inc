@@ -1,0 +1,8 @@
+IF !DEF(VIDEO_INC)
+VIDEO_INC SET 1
+
+; OAM copy for DMA transfers.
+OAMBUF		EQU $cf00
+OAMBUF_LEN	EQU $9F
+
+ENDC ; VIDEO_INC

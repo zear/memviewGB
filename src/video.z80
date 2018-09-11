@@ -1,0 +1,103 @@
+INCLUDE "hardware.inc"
+INCLUDE "video.inc"
+
+SECTION "video", ROM0
+
+; lcd_off - safely turns off LCD.
+;
+; Modifies:
+;  a
+;
+lcd_off::
+    ldh  a, [rLY]
+    cp   a, LYF_VB
+    jr   c, lcd_off
+
+    ld   a, LCDCF_OFF
+    ld   [rLCDC], a
+
+    ret
+
+; wait_ly - waits until LCD draws a line specified in B.
+;
+; Input:
+;  b  - line to wait for (range: 0 - 153).
+;
+; Modifies:
+;  a
+;
+wait_ly::
+    ld   a, [rLY]
+    cp   a, b
+    jr   nz, wait_ly
+
+    ret
+
+; wait_ly_fast - waits until LCD draws a line specified in A.
+;
+; Input:
+;  a  - line to wait for (range: 0 - 153).
+;
+; Modifies:
+;  hl
+;
+wait_ly_fast::
+    ld   hl, rLY
+.wait_ly
+    cp   a, [hl]
+    jr   nz, .wait_ly
+
+    ret
+
+; sleep_irq - sleeps until an IRQ flag specified in HL is set.
+; NOTE: Interrupts must be enabled.
+;
+; Input:
+;  hl - address of IRQ flag
+; Modifies:
+;  a
+;
+sleep_irq::
+    ei
+    xor  a
+.loop
+    halt
+    cp   a, [hl]
+    jr   z, .loop
+    ld   [hl], a
+
+    ret
+
+; oam_init - initializes the OAM DMA routine.
+;
+; Modifies:
+;  hl, de, bc, a
+;
+oam_init::
+    ld   hl, oam_transfer
+    ld   de, oam_copy
+    ld   bc, oam_transfer_end - oam_transfer
+    call memcpy
+
+    ret
+
+oam_transfer:
+    ld   a, OAMBUF >> 8
+    ld   [rDMA], a
+    ld   a, $28 ; Wait 160 ms.
+.loop
+    dec  a
+    jr   nz, .loop
+
+    ret
+oam_transfer_end:
+
+SECTION "oam_hram", HRAM[$ff80]
+
+; oam_copy - copies OAMBUF into OAM RAM with a DMA transfer.
+;
+; Modifies:
+;  a
+;
+oam_copy::
+DS (oam_transfer_end - oam_transfer)
