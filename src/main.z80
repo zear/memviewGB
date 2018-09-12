@@ -1,6 +1,5 @@
 INCLUDE "cartridge.inc"
 INCLUDE "hardware.inc"
-INCLUDE "memory.inc"
 INCLUDE "video.inc"
 
 PAGE_SIZE		EQU $1000
@@ -44,7 +43,6 @@ vblank_f		DS 1
 addr_offset		DS 2
 delay_cnt		DS 1
 BSS_END:
-PUSHS
 
 SECTION "vectors", ROM0[$0000]
 
